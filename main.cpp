@@ -2,10 +2,11 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
-#include <cstring>
-#include <cstdlib>
 #include <sstream>
+#include "chrono"
+#include "thread"
 #include <pqxx/pqxx>
+#include "exprtk/exprtk.hpp"
 
 int startServer(int serverSocket)
 {
@@ -21,7 +22,6 @@ int startServer(int serverSocket)
         return 1;
     }
 
-    // Ожидание подключений
     if (listen(serverSocket, 5) == -1)
     {
         std::cerr << "Error while waiting connection" << std::endl;
@@ -33,7 +33,7 @@ int startServer(int serverSocket)
     return 0;
 }
 
-int initSocket()
+int initServerSocket()
 {
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket == -1)
@@ -44,46 +44,35 @@ int initSocket()
     return serverSocket;
 }
 
-double calculate(const std::string &expression)
+int initClientSocket(int serverSocket)
 {
-    std::istringstream iss(expression);
-    double operand_1, operand_2;
-    char operation;
-    iss >> operand_1 >> operation >> operand_2;
-
-    double result;
-    switch (operation)
+    sockaddr_in clientAddress{};
+    socklen_t clientAddressLength = sizeof(clientAddress);
+    int clientSocket = accept(serverSocket, (struct sockaddr *)&clientAddress, &clientAddressLength);
+    if (clientSocket == -1)
     {
-    case '+':
-        result = operand_1 + operand_2;
-        break;
-    case '-':
-        result = operand_1 - operand_2;
-        break;
-    case '*':
-        result = operand_1 * operand_2;
-        break;
-    case '/':
-        result = operand_1 / operand_2;
-        break;
-    default:
-        result = 0.0;
-        break;
+        std::cerr << "Error while accept connection" << std::endl;
+        close(serverSocket);
+        return 1;
     }
-    return result;
+
+    std::cout << "Connection success" << std::endl;
+    return clientSocket;
 }
 
 bool authenticate(const std::string &username, const std::string &password)
 {
     try
     {
-        pqxx::connection connection("dbname=postgres user=postgres password=7456 hostaddr=172.17.0.3 port=5432");
-        // pqxx::connection connection("dbname=postgres user=postgres password=7456 hostaddr=127.0.0.1 port=5432");
+        pqxx::connection connection("dbname=postgres user=postgres password=7456 hostaddr=172.17.0.2 port=5432");
+        //        pqxx::connection connection("dbname=postgres user=postgres password=7456 hostaddr=127.0.0.1 port=5432");
 
         if (connection.is_open())
         {
             pqxx::work transaction(connection);
             std::string query = "SELECT COUNT(*) FROM users WHERE username = '" + username + "' AND password = '" + password + "';";
+
+            std::cout << query << std::endl;
 
             pqxx::result res = transaction.exec(query);
             int count = res[0][0].as<int>();
@@ -99,122 +88,233 @@ bool authenticate(const std::string &username, const std::string &password)
     return false;
 }
 
+int getBalance(const std::string &username, const std::string &password)
+{
+    pqxx::connection connection("dbname=postgres user=postgres password=7456 hostaddr=172.17.0.2 port=5432");
+    pqxx::work transaction(connection);
+    std::string query = "SELECT balance FROM users WHERE username = '" + username + "' AND password= '" + password + "';";
+
+    std::cout << query << std::endl;
+
+    pqxx::result res = transaction.exec(query);
+    int balance = res[0][0].as<int>();
+    transaction.commit();
+    return balance;
+}
+
+void updateBalance(const int &balance, const std::string &username, const std::string &password)
+{
+    pqxx::connection connection("dbname=postgres user=postgres password=7456 hostaddr=172.17.0.2 port=5432");
+    pqxx::work transaction(connection);
+    std::string query = "UPDATE users SET balance = " + std::to_string(balance) + " WHERE username = '" + username + "' AND password= '" + password + "';";
+    pqxx::result res = transaction.exec(query);
+    transaction.commit();
+}
+
+bool login(bool authenticated, const int &clientSocket)
+{
+    char buffer[1024];
+    ssize_t bytesRead;
+
+    std::string username, password;
+
+    while ((bytesRead = read(clientSocket, buffer, sizeof(buffer))) > 0)
+    {
+        std::istringstream iss(buffer);
+        std::string command;
+        iss >> command;
+        bytesRead = read(clientSocket, buffer, sizeof(buffer));
+        std::cout << "iss = " << command << std::endl;
+        if (command == "login")
+        {
+            iss >> username;
+
+            std::istringstream iss2(buffer);
+            std::string nextCommand;
+            iss2 >> nextCommand;
+            std::cout << "iss2 = " << nextCommand << std::endl;
+
+            if (nextCommand == "logout")
+            {
+                close(clientSocket);
+            }
+            else if (nextCommand == "password")
+            {
+                iss2 >> password;
+                authenticated = authenticate(username, password);
+                std::string response = authenticated ? "Auth success!\n" : "Auth error: user does not exist.\n";
+                ssize_t bytesWritten = write(clientSocket, response.c_str(), response.length());
+                if (bytesWritten == -1)
+                {
+                    std::cerr << "Error while sending data to client" << std::endl;
+                    close(clientSocket);
+                    return 1;
+                }
+                return authenticated;
+            }
+        }
+        else
+        {
+            std::string response = "You need to login! Type login <username>\n";
+
+            ssize_t bytesWritten = write(clientSocket, response.c_str(), response.length());
+
+            if (bytesWritten == -1)
+            {
+                std::cerr << "Error while sending data to client" << std::endl;
+                close(clientSocket);
+                return 1;
+            }
+        }
+    }
+    if (bytesRead == -1)
+    {
+        std::cerr << "Error while reading data from client" << std::endl;
+    }
+    return authenticated;
+}
+
+std::string getCurrentDateTime()
+{
+    auto now = std::chrono::system_clock::now();
+    std::time_t time = std::chrono::system_clock::to_time_t(now);
+    std::string dateTime = std::ctime(&time);
+    dateTime.pop_back();
+    return dateTime;
+}
+
+void logEntry(const std::string &user, const std::string &request, const double &result)
+{
+    std::string dateTime = getCurrentDateTime();
+    std::ofstream logFile("server.log", std::ios::app);
+    if (logFile.is_open())
+    {
+        logFile << "Date/Time: " << dateTime << std::endl;
+        logFile << "User: " << user << std::endl;
+        logFile << "Request: " << request << std::endl;
+        logFile << "Result: " << result << std::endl;
+        logFile << std::endl;
+        logFile.close();
+    }
+    else
+    {
+        std::cerr << "Error opening log file" << std::endl;
+    }
+}
+
+double calculate(const std::string &expression) // TODO: handle empty expression
+{
+    typedef exprtk::expression<double> Expression;
+    typedef exprtk::parser<double> Parser;
+
+    Expression expr;
+    Parser parser;
+
+    if (!parser.compile(expression, expr))
+    {
+        throw std::runtime_error("Failed to compile expression");
+    }
+
+    return expr.value();
+}
+
+bool commandHandler(bool authenticated, int clientSocket)
+{
+    char buffer[1024];
+    ssize_t bytesRead;
+
+    while ((bytesRead = read(clientSocket, buffer, sizeof(buffer))) > 0)
+    {
+        std::istringstream isscommand(buffer);
+        std::string command;
+
+        std::cout << "Receive from client: " << std::string(buffer, bytesRead) << std::endl;
+
+        //        std::string command(buffer, bytesRead);
+        isscommand >> command;
+        std::cout << "command = " << command << std::endl;
+        std::string expression;
+
+        //        if (command.substr(0, 4) == "calc")
+        if (command == "calc")
+        {
+            //            std::string expression = command.substr(5);
+            isscommand >> expression;
+            std::cout << "expression = " << expression << std::endl;
+            double result = calculate(expression);
+            int balance = getBalance("admin", "admin");
+            if (balance <= 0)
+            {
+                std::string response = "Yor don't have balance to this action\n";
+
+                ssize_t bytesWritten = write(clientSocket, response.c_str(), response.length());
+                if (bytesWritten == -1)
+                    std::cerr << "Error while sending data to client" << std::endl;
+            }
+            else
+            {
+                balance--;
+                updateBalance(balance, "admin", "admin");
+                std::string response = std::to_string(result) + "\n" + "Now your balance = " + std::to_string(balance) + "\n";
+
+                ssize_t bytesWritten = write(clientSocket, response.c_str(), response.length());
+
+                if (bytesWritten == -1)
+                    std::cerr << "Error while sending data to client" << std::endl;
+            }
+            logEntry("admin", expression, result);
+        }
+        else if (command.substr(0, 6) == "logout")
+        {
+            std::string response = "Logout....\n";
+            ssize_t bytesWritten = write(clientSocket, response.c_str(), response.length());
+
+            authenticated = false;
+            login(authenticated, clientSocket);
+            // login(authenticated,clientSocket,serverSocket);
+            if (bytesWritten == -1)
+                std::cerr << "error while sending data to client" << std::endl;
+            close(clientSocket);
+        }
+        else
+        {
+            std::string response = "Incorrect command\n";
+
+            ssize_t bytesWritten = write(clientSocket, response.c_str(), response.length());
+            if (bytesWritten == -1)
+                std::cerr << "error while sending data to client" << std::endl;
+        }
+    }
+    if (bytesRead == -1)
+    {
+        std::cerr << "Error while reading data from client" << std::endl;
+    }
+    return authenticated;
+}
+
 int main()
 {
-    int serverSocket = initSocket();
-    startServer(serverSocket);
+    int serverSocket = initServerSocket();
+    //    startServer(serverSocket);
 
-    while (true)
+    while (startServer(serverSocket) == 0)
     {
 
-        sockaddr_in clientAddress{};
-        socklen_t clientAddressLength = sizeof(clientAddress);
-        int clientSocket = accept(serverSocket, (struct sockaddr *)&clientAddress, &clientAddressLength);
-        if (clientSocket == -1)
-        {
-            std::cerr << "Error while accept connection" << std::endl;
-            close(serverSocket);
-            return 1;
-        }
-
-        std::cout << "Connection success" << std::endl;
+        int clientSocket = initClientSocket(serverSocket);
 
         bool authenticated = false;
         while (!authenticated)
         {
-            char buffer[1024];
-            ssize_t bytesRead = read(clientSocket, buffer, sizeof(buffer));
-            if (bytesRead == -1)
-            {
-                std::cerr << "Error while reading socket" << std::endl;
-                close(clientSocket);
-                close(serverSocket);
-                return 1;
-            }
-
-            std::string credentials(buffer, bytesRead);
-
-            std::istringstream iss(credentials);
-
-            std::string username, password;
-            iss >> username >> password;
-            std::cout << username << ' ' << password << std::endl;
-
-            authenticated = authenticate(username, password);
-
-            std::string response = authenticated ? "Auth success!\n" : "Auth error\n";
-            ssize_t bytesWritten = write(clientSocket, response.c_str(), response.length());
-            if (bytesWritten == -1)
-            {
-                std::cerr << "Error while wtire to socket" << std::endl;
-                close(clientSocket);
-                close(serverSocket);
-                return 1;
-            }
-            if (authenticated)
-            {
-                std::cout << "Auth success. Waiting command... " << authenticated << std::endl;
-            }
-            else
-            {
-                std::cout << "Auth error. Retry...." << authenticated << std::endl;
-            }
+            authenticated = login(authenticated, clientSocket);
         }
 
         while (authenticated)
         {
-
-            char buffer[1024];
-            ssize_t bytesRead;
-            while ((bytesRead = read(clientSocket, buffer, sizeof(buffer))) > 0)
-            {
-
-                std::cout << "Recive from client: " << std::string(buffer, bytesRead) << std::endl;
-
-                std::string command(buffer, bytesRead);
-
-                if (command.substr(0, 4) == "calc")
-                {
-                    std::string expression = command.substr(5);
-                    double result = calculate(expression);
-
-                    std::string response = std::to_string(result);
-
-                    ssize_t bytesWritten = write(clientSocket, response.c_str(), response.length());
-
-                    if (bytesWritten == -1)
-                        std::cerr << "Error while sending data to client" << std::endl;
-                }
-                else if (command.substr(0,6) == "logout")
-                {
-                    authenticated = false;
-                    std::string response = "Logout....\n";
-                    ssize_t bytesWritten = write(clientSocket, response.c_str(), response.length());
-                    if (bytesWritten == -1)
-                        std::cerr << "error while sending data to client" << std::endl;
-                }
-                else
-                {
-                    std::string response = "Incorrect command\n";
-
-                    ssize_t bytesWritten = write(clientSocket, response.c_str(), response.length());
-                    if (bytesWritten == -1)
-                        std::cerr << "error while sending data to client" << std::endl;
-                }
-            }
-            if (bytesRead == -1)
-            {
-                std::cerr << "Error while reading data from client" << std::endl;
-            }
-            authenticated = false;
+            authenticated = commandHandler(authenticated, clientSocket);
         }
         // TODO: command logout
         close(clientSocket);
-        close(serverSocket);
-        std::cout << "Connection close" << std::endl;
     }
-
     close(serverSocket);
-
     return 0;
 }
