@@ -1,3 +1,0 @@
-/home/andrey/Desktop/some_shit/server-calculator-cpp/build/CMakeFiles/server_calculator_cpp.dir
-/home/andrey/Desktop/some_shit/server-calculator-cpp/build/CMakeFiles/edit_cache.dir
-/home/andrey/Desktop/some_shit/server-calculator-cpp/build/CMakeFiles/rebuild_cache.dir
