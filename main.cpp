@@ -111,8 +111,7 @@ void Server::initClientSocket(Client &client) {
 
 bool authenticate(Client client) {
     try {
-//        pqxx::connection connection("dbname=postgres user=postgres password=7456 hostaddr=172.17.0.2 port=5432");
-        pqxx::connection connection("dbname=postgres user=postgres password=7456 hostaddr=127.0.0.1 port=5432");
+        pqxx::connection connection("dbname=postgres user=postgres password=7456 hostaddr=db port=5432");
 
         if (connection.is_open()) {
             std::cout << "Connetction to db success!" << std::endl;
@@ -138,8 +137,7 @@ bool authenticate(Client client) {
 }
 
 int getBalanceFromDB(Client client) {
-//    pqxx::connection connection("dbname=postgres user=postgres password=7456 hostaddr=172.17.0.2 port=5432");
-    pqxx::connection connection("dbname=postgres user=postgres password=7456 hostaddr=127.0.0.1 port=5432");
+    pqxx::connection connection("dbname=postgres user=postgres password=7456 hostaddr=db port=5432");
     pqxx::work transaction(connection);
     std::string query = "SELECT balance FROM users WHERE username = '" + client.getUsername() + "' AND password= '" +
                         client.getPassword() + "';";
@@ -153,8 +151,7 @@ int getBalanceFromDB(Client client) {
 }
 
 void Client::setBalance(const int &balance) {
-//    pqxx::connection connection("dbname=postgres user=postgres password=7456 hostaddr=172.17.0.2 port=5432");
-    pqxx::connection connection("dbname=postgres user=postgres password=7456 hostaddr=127.0.0.1 port=5432");
+    pqxx::connection connection("dbname=postgres user=postgres password=7456 hostaddr=db port=5432");
     pqxx::work transaction(connection);
     std::string query = "UPDATE users SET balance = " + std::to_string(balance) + " WHERE username = '" + _username +
                         "' AND password= '" + _password + "';";
