@@ -20,7 +20,7 @@ else()
     message(FATAL_ERROR "Compiler ${CMAKE_CXX_COMPILER} has no C++11 support.")
 endif()
 
-add_executable(server_calculator_cpp
+add_executable(server-calculator-cpp
         main.cpp)
 
 find_package(PkgConfig REQUIRED)
@@ -28,4 +28,4 @@ pkg_check_modules(PQXX REQUIRED libpqxx)
 
 include_directories(${PQXX_INCLUDE_DIRS})
 link_directories(${PQXX_LIBRARY_DIRS})
-target_link_libraries(server_calculator_cpp ${PQXX_LIBRARIES})
+target_link_libraries(server-calculator-cpp ${PQXX_LIBRARIES})

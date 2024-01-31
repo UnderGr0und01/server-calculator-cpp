@@ -1,14 +1,17 @@
 FROM centos:7
 
 RUN yum update -y && \
-    yum install -y lksctp-tools-devel && \
     yum install -y epel-release && \
-    yum install -y gcc-c++ cmake make libpqxx-devel
+    yum install -y libpqxx-devel && \
+    yum install -y gcc-c++ cmake make
 
-COPY . /app
-WORKDIR app/build
+COPY . /server-calculator-cpp/
+RUN mkdir build
+WORKDIR /server-calculator-cpp/build
 
 RUN cmake .. &&\
-    make
+    cmake --build .
 
-ENTRYPOINT ["./server-calculator-cpp"]
+RUN chmod +x server-calculator-cpp
+
+CMD ["./server-calculator-cpp"]
