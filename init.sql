@@ -7,5 +7,5 @@ CREATE TABLE users(
 INSERT INTO users VALUES(
     'admin',
     'admin',
-    100
+    1000
 );

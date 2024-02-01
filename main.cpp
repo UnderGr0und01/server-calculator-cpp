@@ -249,9 +249,6 @@ double calculate(const std::string &expression) {
     if (!parser.compile(expression, expr)) {
         throw std::runtime_error("Failed to compile expression");
     }
-//    if (!parser.compile(expression, expr)) {
-//        std::cout << ("Failed to compile expression") << std::endl;
-//    }
 
     return expr.value();
 }

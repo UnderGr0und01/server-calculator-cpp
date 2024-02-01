@@ -2,7 +2,7 @@ version: '3'
 services:
   db:
     container_name: db
-    image: postgres:16
+    image: postgres:13
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: secret
@@ -13,9 +13,7 @@ services:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - calculator-network
-#    networks:
-#          calculator-network:
-#            - ipv4_address: 172.30.0.2
+
   server:
     container_name: server
     restart: always
@@ -28,18 +26,6 @@ services:
       - db
     networks:
       - calculator-network
-#        calculator-network:
-#          - ipv4_address: 172.30.0.3
-#    networks:
-#      calculator-network:
-#        - ipv4_address: 172.30.0.2
-#networks:
-#  calculator-network:
-#    driver: bridge
-#    ipam:
-#      driver: default
-#      config:
-#        - subnet: "172.30.0.0/24"
 
 networks:
   calculator-network:
