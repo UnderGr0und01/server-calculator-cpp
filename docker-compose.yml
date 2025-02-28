@@ -1,8 +1,9 @@
-version: '3'
+version: '3.9'
 services:
   db:
     container_name: db
-    image: postgres:16
+    # restart: always
+    image: postgres:latest
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: secret
@@ -10,6 +11,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
+      # - ./postgresql.conf:/var/lib/postgresql/data/postgresql.conf
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - calculator-network

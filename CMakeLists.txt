@@ -21,11 +21,16 @@ else()
 endif()
 
 add_executable(server-calculator-cpp
-        main.cpp)
-
+        main.cpp
+        Server.cpp
+        Server.h
+        Session.cpp
+        Session.h)
+find_package(Boost REQUIRED COMPONENTS system)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PQXX REQUIRED libpqxx)
 
+include_directories(${PQXX_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 include_directories(${PQXX_INCLUDE_DIRS})
 link_directories(${PQXX_LIBRARY_DIRS})
-target_link_libraries(server-calculator-cpp ${PQXX_LIBRARIES})
+target_link_libraries(server-calculator-cpp ${PQXX_LIBRARIES} ${Boost_LIBRARIES})
